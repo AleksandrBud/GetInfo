@@ -24,7 +24,8 @@ def get_profile():
 
 
 def get_page_html_BS(link):
-    headers = {'User-agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) snap Chromium/79.0.3945.79 Chrome/79.0.3945.79 Safari/537.36'}
+    headers = {
+        'User-agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) snap Chromium/79.0.3945.79 Chrome/79.0.3945.79 Safari/537.36'}
     ret_html = requests.get(link, headers=headers).text
     return BeautifulSoup(ret_html, 'lxml')
 
@@ -37,14 +38,13 @@ def get_html(link):
 
 class News:
     session = ''
-    record = ''
 
     def __init__(self, connection_string):
         engine = create_engine(connection_string)
         session_maker = sessionmaker(bind=engine)
         self.session = session_maker()
 
-    class Newsdb(declarative_base()):
+    class NewsDB(declarative_base()):
         __tablename__ = 'news'
         date = Column(Date, primary_key=True)
         description = Column(String(200), primary_key=True)
@@ -57,20 +57,23 @@ class News:
             self.link = ln
             self.source = source
 
-    def unique_record(self):
-        return self.session.query(exists().where(
-            self.Newsdb.date == self.record.date and self.Newsdb.description == self.record.description)).scalar()
+    def unique_record(self, new_date, new_desc):
+        result = self.session.query(exists().where(
+            self.NewsDB.description == new_desc)).scalar()
+        return result
 
     def new_record(self, arr_news: object) -> object:
         for element in arr_news:
-            self.record = self.Newsdb(element['date'], element['desc'], element['href'], element['source'])
-            if not self.unique_record():
-                self.session.add(self.record)
+            if not self.unique_record(element['date'], element['desc']):
+                record = self.NewsDB(element['date'], element['desc'], element['href'], element['source'])
+                self.session.add(record)
                 self.session.commit()
+            else:
+                print(element['date'], element['desc'])
 
     def get_records_by_date(self, date_from, date_to):
-        for instance in self.session.query(self.Newsdb).filter(self.Newsdb.date > date_from,
-                                                               self.Newsdb.date < date_to):
+        for instance in self.session.query(self.NewsDB).filter(self.NewsDB.date > date_from,
+                                                               self.NewsDB.date < date_to):
             print(instance.date, instance.description, instance.link)
 
 
@@ -127,7 +130,7 @@ class BCS:
         first_id_news = proc_html.find('a', {'class', 'feed-item__favorite tooltip favorite js-favorite'})['data-id']
         category_link = self.category.split('/')[-1]
         news = []
-        #for i in range(3):
+        # for i in range(3):
         last_id = 0
         while last_id < int(first_id_news):
             if last_id != 0:
@@ -142,7 +145,8 @@ class BCS:
             for line_news in data_api['items']:
                 date_split = line_news['publishDate'].split(' ')
                 if len(date_split) == 4:
-                    dt = datetime.datetime.now().year.__str__() + '-' + str(month[date_split[1]]) + '-' + date_split[0] + ' ' + date_split[3] + ':00'
+                    dt = datetime.datetime.now().year.__str__() + '-' + str(month[date_split[1]]) + '-' + date_split[
+                        0] + ' ' + date_split[3] + ':00'
                 elif len(date_split) == 3:
                     dt = date_split[2] + '-' + str(month[date_split[1]]) + '-' + date_split[0] + ' ' + '00:00:00'
                 new = {'date': dt,
@@ -166,19 +170,16 @@ class Mailru:
         main_news = ret_html.xpath("//div[contains(@id,'news:item')]")
         news_arr = []
         for n in main_news:
-            data_timestamp = n.xpath("@data-value")[0]
-            if len(data_timestamp) == 0:
-                data_timestamp = n.xpath("@data-d")[0]
             href = n.xpath(".//a/@href")[0]
             response_link = requests.get(href).text
             ret_html_link = html.fromstring(response_link)
-            data_news_s = ret_html_link.xpath(".//span[@class = 'note__text breadcrumbs__text js-ago']/@datetime")[0]
-            datetime_news = datetime.datetime.fromisoformat(data_news_s)
+            date_news_s = ret_html_link.xpath(".//span[@class = 'note__text breadcrumbs__text js-ago']/@datetime")[0]
+            datetime_news = datetime.datetime.fromisoformat(date_news_s)
             datetime_news = datetime_news + datetime.timedelta(hours=int(datetime_news.timetz().__str__()[-5:-3]))
-            data_news = datetime_news.strftime('%Y-%m-%d %H:%M:%S')
+            date_news = datetime_news.strftime('%Y-%m-%d %H:%M:%S')
             desc = n.xpath(".//span[contains(@class,'news__list__item__link__text')]/text()")[0].replace('\xa0', ' ')
             if len(desc) != 0:
-                new = {'date': data_news,
+                new = {'date': date_news,
                        'desc': desc,
                        'href': href,
                        'source': 'MAIL.RU'}
@@ -208,8 +209,8 @@ class Lenta:
                 year = day[-8:-4]
                 month = day[-11:-9]
                 day = day[-14:-12]
-            data_news = year + '-' + month + '-' + day + ' ' + '00:00:00'
-            new = {'date': data_news,
+            date_news = year + '-' + month + '-' + day + ' ' + '00:00:00'
+            new = {'date': date_news,
                    'desc': desc,
                    'href': self.main_link + href,
                    'source': 'LENTA.RU'}
@@ -226,24 +227,13 @@ class Yandex:
     def get_news_xpath(self):
         response = requests.get(self.main_link).text
         ret_html = html.fromstring(response)
-        #main_news = ret_html.xpath(".//div[@class='stories-set stories-set_main_yes stories-set_pos_0']")
+        # main_news = ret_html.xpath(".//div[@class='stories-set stories-set_main_yes stories-set_pos_0']")
         table_news = ret_html.xpath("//td[@class='stories-set__item']")
         news_arr = []
-        # for n in main_news:
-        #     href = n.xpath(".//a[@class='link link_theme_black i-bem']/@href")
-        #     desc = n.xpath(".//a[@class='link link_theme_black i-bem']/text()")[0].replace('\xa0', ' ')
-        #     for_data = n.xpath(".//div[@class='story__date']/text()")
-        #     link_arr = for_data.split(' ')
-        #     data_news = link_arr[2] + '-' + link_arr[3] + '-' + link_arr[4]
-        #     new = {'date': data_news,
-        #            'desc': desc,
-        #            'href': self.main_link + href,
-        #            'source': 'YANDEX.RU'}
-        #     news_arr.append(new)
         for n in table_news:
             href = n.xpath(".//a[@class='link link_theme_black i-bem']/@href")[0]
             desc = n.xpath(".//a[@class='link link_theme_black i-bem']/text()")[0].replace('\xa0', ' ')
-            data_news = n.xpath(".//div[@class='story__date']/text()")[0]
+            date_news = n.xpath(".//div[@class='story__date']/text()")[0]
             split_arr = n.xpath(".//div[@class='story__date']/text()")[0].replace('\xa0', ' ').split(' ')
             year = datetime.datetime.now().year.__str__()
             month = datetime.datetime.now().month.__str__()
@@ -257,38 +247,46 @@ class Yandex:
                 day = str(int(day) - 1)
             if len(day) == 1:
                 day = '0' + day
-            data_news = year + '-' + month + '-' + day + ' ' + split_arr[-1] + ':' + '00'
-            new = {'date': data_news,
+            date_news = year + '-' + month + '-' + day + ' ' + split_arr[-1] + ':' + '00'
+            new = {'date': date_news,
                    'desc': desc,
                    'href': self.main_link + href,
                    'source': 'YANDEX.RU'}
             news_arr.append(new)
         return news_arr
 
+
 month = {'января': 1, 'февраля': 2, 'марта': 3, 'апреля': 4, 'мая': 5, 'июня': 6, 'июля': 7, 'августа': 8,
          'сентября': 9, 'октября': 10, 'ноября': 11, 'декабря': 12}
+input_source = int(input('Из какого источника собирать данные:\n1. РБК\n2. БКС\n3. Mail\n4. Lenta\n5. Yandex\n0. '
+                         'Вывод из БД\nВвод:'))
 
 news_collection = News(con_db.connect_string())
-rbc = RBC()
-rbc_html = rbc.get_html()
-arr_news = rbc.parce_html_BS(rbc_html)
-news_collection.new_record(arr_news)
-bcs = BCS()
-arr_news = bcs.get_news_api(bcs.get_html())
-#print('Write...')
-news_collection.new_record(arr_news)
-mail = Mailru()
-arr_news = mail.get_news_xpath()
-news_collection.new_record(arr_news)
-yandex = Yandex()
-arr_news = yandex.get_news_xpath()
-news_collection.new_record(arr_news)
-l_news = Lenta()
-arr_news = l_news.get_news_xpath()
-news_collection.new_record(arr_news)
-search_date = input('Введите дату в формате (ддммгггг)')
-search_date_from = search_date[4:8] + '-' + search_date[2:4] + '-' + search_date[:2] + ' 00:00:00'
-search_date_to = search_date[4:8] + '-' + search_date[2:4] + '-' + search_date[:2] + ' 23:59:59'
-news_collection.get_records_by_date(search_date_from, search_date_to)
-# for news in arr_news:
-#     print(news)
+if input_source == 1:
+    rbc = RBC()
+    rbc_html = rbc.get_html()
+    arr_news = rbc.parce_html_BS(rbc_html)
+    news_collection.new_record(arr_news)
+elif input_source == 2:
+    bcs = BCS()
+    arr_news = bcs.get_news_api(bcs.get_html())
+    news_collection.new_record(arr_news)
+elif input_source == 3:
+    mail = Mailru()
+    arr_news = mail.get_news_xpath()
+    news_collection.new_record(arr_news)
+elif input_source == 4:
+    l_news = Lenta()
+    arr_news = l_news.get_news_xpath()
+    news_collection.new_record(arr_news)
+elif input_source == 5:
+    yandex = Yandex()
+    arr_news = yandex.get_news_xpath()
+    news_collection.new_record(arr_news)
+elif input_source == 0:
+    search_date = input('Введите дату в формате (ддммгггг)')
+    search_date_from = search_date[4:8] + '-' + search_date[2:4] + '-' + search_date[:2] + ' 00:00:00'
+    search_date_to = search_date[4:8] + '-' + search_date[2:4] + '-' + search_date[:2] + ' 23:59:59'
+    news_collection.get_records_by_date(search_date_from, search_date_to)
+else:
+    print('Не корректный ввод!')

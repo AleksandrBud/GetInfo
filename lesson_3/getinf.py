@@ -3,7 +3,7 @@ import time
 import json
 import datetime
 import sys
-import con_db
+
 from bs4 import BeautifulSoup
 from pprint import pprint
 from selenium import webdriver
@@ -14,8 +14,8 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.sql import exists
 
-sys.path.insert(0, "~/bin")
-
+sys.path.insert(this, '~/bin')
+import con_db
 
 def get_profile():
     profile = webdriver.FirefoxProfile()
